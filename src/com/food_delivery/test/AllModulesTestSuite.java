@@ -3,16 +3,17 @@ package com.food_delivery.test;
 import com.food_delivery.cart.test.CartTestSuite;
 import com.food_delivery.customer.test.CustomerTestSuite;
 import com.food_delivery.integration.test.Module2IntegrationTestSuite;
+import com.food_delivery.order.test.OrderTestSuite;
 import com.food_delivery.restaurant.test.RestaurantTestSuite;
 
 /**
- * Master test runner executing all test suites across Module 1 and Module 2.
+ * Master test runner executing all test suites across Module 1, Module 2, and Module 3.
  */
 public class AllModulesTestSuite {
 
     public static void main(String[] args) {
         System.out.println("================================================================================");
-        System.out.println("          STARTING COMPREHENSIVE TEST EXECUTION (MODULE 1 & MODULE 2)           ");
+        System.out.println("     STARTING COMPREHENSIVE TEST EXECUTION (MODULE 1, MODULE 2 & MODULE 3)      ");
         System.out.println("================================================================================\n");
 
         // 1. Run Module 1 Test Suite
@@ -31,8 +32,12 @@ public class AllModulesTestSuite {
         Module2IntegrationTestSuite.main(args);
         System.out.println();
 
+        // 5. Run Module 3 Order Management Test Suite
+        OrderTestSuite.main(args);
+        System.out.println();
+
         System.out.println("================================================================================");
-        System.out.println("  ALL TEST SUITES (15 M1 + 11 CUSTOMER + 18 CART + 8 INTEGRATION = 52) PASSED! ");
+        System.out.println("  ALL TEST SUITES (15 M1 + 11 CUST + 18 CART + 8 INT + 16 ORDER = 68) PASSED!   ");
         System.out.println("================================================================================");
     }
 }

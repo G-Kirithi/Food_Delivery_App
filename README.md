@@ -251,30 +251,105 @@ src/com/food_delivery/
 │   │   └── CartServiceImpl.java           # Cart business logic & Module 1 integration
 │   └── test/
 │       └── CartTestSuite.java             # 18 deterministic unit and business rule test cases
-├── integration/
+├── order/
+│   ├── controller/
+│   │   └── OrderController.java           # REST API endpoints for order placement & lifecycle
+│   ├── dto/
+│   │   ├── PlaceOrderRequest.java         # DTO for placing an order
+│   │   └── OrderResponse.java             # DTO with formatted order response
+│   ├── enums/
+│   │   └── OrderStatus.java               # PLACED, ACCEPTED, PREPARING, READY_FOR_PICKUP, OUT_FOR_DELIVERY, DELIVERED, CANCELLED, REJECTED
+│   ├── exception/
+│   │   ├── OrderException.java            # Base domain exception
+│   │   ├── OrderNotFoundException.java    # 404 Not Found
+│   │   ├── OrderValidationException.java  # 400 Bad Request
+│   │   ├── InvalidOrderStateException.java# 400 Bad Request (illegal state transition/cancellation)
+│   │   ├── OrderTimeoutException.java     # 408 Request Timeout (5-min acceptance expiry)
+│   │   └── UnauthorizedOrderException.java# 403 Forbidden
+│   ├── model/
+│   │   ├── Order.java                     # Order entity with strict lifecycle state machine
+│   │   └── OrderItem.java                 # Immutable snapshot of item price at order time
+│   ├── repository/
+│   │   ├── OrderRepository.java           # Persistence interface for orders
+│   │   └── InMemoryOrderRepository.java   # Thread-safe ConcurrentHashMap storage
+│   ├── service/
+│   │   ├── OrderService.java              # Service contract for order operations
+│   │   ├── OrderServiceImpl.java          # Order business logic, snapshotting, and validation
+│   │   └── ActiveOrderCheckerImpl.java    # Integration with Module 1 ActiveOrderChecker
 │   └── test/
-│       └── Module2IntegrationTestSuite.java # 8 end-to-end integration test cases
+│       └── OrderTestSuite.java            # 16 deterministic unit and integration test cases
+├── cli/
+│   └── ordercli.java                      # Interactive CLI menu for order management
 └── test/
-    └── AllModulesTestSuite.java           # Master runner executing all 52 test cases
+    └── AllModulesTestSuite.java           # Master runner executing all 68 test cases
 ```
 
-### 2. How to Run the Build and Tests
+---
 
-#### Run All Tests (52 Tests across Module 1 & Module 2):
+## Module 3: Order Placement and Status Management
+
+### 1. Architecture and Package Layout
+
+Module 3 orchestrates order validation, immutable snapshot creation, cart checkout, sequential lifecycle transitions, 5-minute timeout auto-cancellations, and integration with the Restaurant module via `ActiveOrderChecker`.
+
+### 2. Classes and Responsibilities
+
+| Class / Interface | Responsibility |
+|---|---|
+| `Order` | Domain aggregate root. Stores immutable snapshots of items, unit prices at order time, delivery city and address, and timestamps for every lifecycle event. Enforces legal status transitions. |
+| `OrderItem` | Immutable snapshot of an ordered dish. Captures `menuItemId`, `itemName`, `unitPrice` (`BigDecimal`), and `quantity`. Immune to subsequent restaurant menu price updates. |
+| `OrderStatus` | Strict state enum: `PLACED`, `ACCEPTED`, `PREPARING`, `READY_FOR_PICKUP`, `OUT_FOR_DELIVERY`, `DELIVERED`, `CANCELLED`, `REJECTED`. Enforces unidirectional state transitions via `canTransitionTo()`. |
+| `OrderRepository` / `InMemoryOrderRepository` | Persistence interface and thread-safe in-memory store for orders with queries by customer, restaurant, status, and active order counts. |
+| `OrderService` / `OrderServiceImpl` | Core business logic orchestrating order pre-requisite validation, cart clearing, state progression, restaurant ownership checks, and 5-minute timeout auto-cancellations. |
+| `ActiveOrderCheckerImpl` | Implements `com.food_delivery.restaurant.integration.ActiveOrderChecker`, enabling `RestaurantService.deleteRestaurant()` to prevent deletion when active orders exist. |
+| `OrderController` | REST API controller exposing endpoints for order placement, state updates, cancellations, and order retrieval wrapped in `ApiResponse<T>`. |
+| `ordercli` | Interactive terminal CLI for order placement and lifecycle tracking. |
+| `OrderTestSuite` | 16 comprehensive unit and integration test cases covering all Module 3 business rules. |
+
+---
+
+### 3. Business Rules Implemented
+
+1. **Order Placement Validation**:
+   - Restaurant must be activated, open, and accepting orders within operating hours (`isAcceptingOrders`).
+   - Customer must have fewer than 3 active orders (`countActiveOrdersByCustomerId < 3`).
+   - Delivery address city must strictly match the restaurant city (`city.equalsIgnoreCase(restaurant.getCity())`). Inter-city delivery is rejected.
+   - Shopping cart cannot be empty.
+   - Cart total must meet or exceed the restaurant's minimum order value (`itemsTotal >= restaurant.minOrderValue`).
+2. **Dynamic Menu Availability at Checkout**:
+   - If an item in the cart becomes unavailable before checkout, it is automatically removed from the cart and the customer is notified with a clear message.
+3. **Price Immutability**:
+   - Menu item prices are captured as immutable `OrderItem` snapshots at placement time. Later price updates in Module 1 do not affect placed orders.
+4. **Cart Clearing**:
+   - Upon successful order placement, the customer's cart is automatically emptied and reset via `cartService.clearCart(customerId)`.
+5. **Strict Sequential Lifecycle**:
+   - Orders strictly transition: $\text{PLACED} \to \text{ACCEPTED} \to \text{PREPARING} \to \text{READY\_FOR\_PICKUP} \to \text{OUT\_FOR\_DELIVERY} \to \text{DELIVERED}$. Skipping steps or moving backwards throws `InvalidOrderStateException`.
+6. **5-Minute Restaurant Acceptance Rule**:
+   - The restaurant must accept an order within 5 minutes of placement. Attempting to accept after 5 minutes triggers auto-cancellation and throws `OrderTimeoutException`.
+7. **Rejection & Cancellation Rules**:
+   - Restaurant can reject an order **only** while in `PLACED` status and **must** provide a non-blank reason.
+   - Customer can cancel an order **only** while in `PLACED` or `ACCEPTED` status. Cancellation is strictly prohibited once `PREPARING` starts.
+8. **Active Order Integration**:
+   - An active order is any order not in `DELIVERED`, `CANCELLED`, or `REJECTED`. Deleting a restaurant while active orders exist is blocked via `ActiveOrderChecker`.
+
+---
+
+### 4. How to Run the Build and Tests
+
+#### Run All 68 Tests (Modules 1, 2, and 3):
 ```powershell
 javac -d bin (Get-ChildItem -Recurse -Filter *.java -Path src | Select-Object -ExpandProperty FullName)
 java -cp bin com.food_delivery.test.AllModulesTestSuite
 ```
 
-#### Run Module 2 Tests Individually:
+#### Run Module 3 Tests Individually (16 Tests):
 ```powershell
-# Customer tests (11 tests)
-java -cp bin com.food_delivery.customer.test.CustomerTestSuite
-
-# Cart tests (18 tests)
-java -cp bin com.food_delivery.cart.test.CartTestSuite
-
-# Module 1 & 2 Integration tests (8 tests)
-java -cp bin com.food_delivery.integration.test.Module2IntegrationTestSuite
+java -cp bin com.food_delivery.order.test.OrderTestSuite
 ```
+
+#### Run the Interactive Application / End-to-End Simulation:
+```powershell
+java -cp bin com.food_delivery.Main
+```
+
 
