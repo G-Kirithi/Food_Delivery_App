@@ -1,0 +1,14 @@
+# Build and compiled output
+bin/
+out/
+target/
+*.class
+
+# IDE and Editor configurations
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
