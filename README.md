@@ -189,3 +189,92 @@ java -cp bin com.food_delivery.restaurant.test.RestaurantTestSuite
 13. Allow deletion when no active orders exist, and cascade cleanup of menu items.
 14. Reject duplicate restaurant and menu item IDs.
 15. Verify menu items and restaurants are correctly retrieved and searchable from repositories.
+
+---
+
+## Module 2: Customer and Cart Management
+
+### 1. Architecture and Package Layout
+
+Module 2 follows domain-driven package layout under `com.food_delivery.customer` and `com.food_delivery.cart`:
+
+```text
+src/com/food_delivery/
+├── common/
+│   └── api/
+│       └── ApiResponse.java               # Standard HTTP-compatible response wrapper
+├── customer/
+│   ├── controller/
+│   │   └── CustomerController.java        # REST API endpoints for customer & address
+│   ├── dto/
+│   │   ├── AddressRequest.java            # DTO for adding/updating addresses
+│   │   └── CustomerRegistrationRequest.java # DTO for customer registration
+│   ├── exception/
+│   │   ├── CustomerException.java         # Base domain exception
+│   │   ├── CustomerNotFoundException.java # 404 Not Found
+│   │   ├── CustomerValidationException.java # 400 Bad Request
+│   │   ├── DuplicatePhoneNumberException.java # 409 Conflict
+│   │   └── InvalidAddressException.java   # 400 Bad Request (including last address deletion)
+│   ├── model/
+│   │   ├── Address.java                   # Address entity with invariant validation
+│   │   └── Customer.java                  # Customer entity with address collection invariants
+│   ├── repository/
+│   │   ├── CustomerRepository.java        # Interface for customer persistence
+│   │   └── InMemoryCustomerRepository.java # Thread-safe ConcurrentHashMap storage
+│   ├── service/
+│   │   ├── CustomerService.java           # Interface for customer operations
+│   │   └── CustomerServiceImpl.java       # Customer business logic & validations
+│   └── test/
+│       └── CustomerTestSuite.java         # 11 deterministic unit test cases
+├── cart/
+│   ├── controller/
+│   │   └── CartController.java            # REST API endpoints for cart operations
+│   ├── dto/
+│   │   ├── AddToCartRequest.java          # DTO for adding items to cart
+│   │   ├── UpdateCartItemRequest.java     # DTO for updating item quantity
+│   │   ├── CartItemResponse.java          # DTO for cart item responses
+│   │   └── CartResponse.java              # DTO for complete cart response
+│   ├── exception/
+│   │   ├── CartException.java             # Base domain exception
+│   │   ├── CartNotFoundException.java     # 404 Not Found
+│   │   ├── InvalidQuantityException.java  # 400 Bad Request (quantity < 1 or > 10)
+│   │   ├── MenuItemUnavailableException.java # 400 Bad Request (item marked unavailable)
+│   │   └── RestaurantMismatchException.java # 409 Conflict (items from multiple restaurants)
+│   ├── model/
+│   │   ├── Cart.java                      # Cart entity with single-restaurant enforcement
+│   │   └── CartItem.java                  # Line item with subtotal calculation
+│   ├── repository/
+│   │   ├── CartRepository.java            # Interface for cart persistence
+│   │   └── InMemoryCartRepository.java    # Thread-safe ConcurrentHashMap storage
+│   ├── service/
+│   │   ├── CartService.java               # Interface for cart operations
+│   │   └── CartServiceImpl.java           # Cart business logic & Module 1 integration
+│   └── test/
+│       └── CartTestSuite.java             # 18 deterministic unit and business rule test cases
+├── integration/
+│   └── test/
+│       └── Module2IntegrationTestSuite.java # 8 end-to-end integration test cases
+└── test/
+    └── AllModulesTestSuite.java           # Master runner executing all 52 test cases
+```
+
+### 2. How to Run the Build and Tests
+
+#### Run All Tests (52 Tests across Module 1 & Module 2):
+```powershell
+javac -d bin (Get-ChildItem -Recurse -Filter *.java -Path src | Select-Object -ExpandProperty FullName)
+java -cp bin com.food_delivery.test.AllModulesTestSuite
+```
+
+#### Run Module 2 Tests Individually:
+```powershell
+# Customer tests (11 tests)
+java -cp bin com.food_delivery.customer.test.CustomerTestSuite
+
+# Cart tests (18 tests)
+java -cp bin com.food_delivery.cart.test.CartTestSuite
+
+# Module 1 & 2 Integration tests (8 tests)
+java -cp bin com.food_delivery.integration.test.Module2IntegrationTestSuite
+```
+
