@@ -20,6 +20,18 @@ import com.food_delivery.order.repository.OrderRepository;
 import com.food_delivery.order.service.ActiveOrderCheckerImpl;
 import com.food_delivery.order.service.OrderService;
 import com.food_delivery.order.service.OrderServiceImpl;
+import com.food_delivery.payment.dto.PaymentRequest;
+import com.food_delivery.payment.enums.DiscountType;
+import com.food_delivery.payment.enums.PaymentMethod;
+import com.food_delivery.payment.model.Coupon;
+import com.food_delivery.payment.model.Payment;
+import com.food_delivery.payment.repository.CouponRepository;
+import com.food_delivery.payment.repository.InMemoryCouponRepository;
+import com.food_delivery.payment.repository.InMemoryPaymentRepository;
+import com.food_delivery.payment.repository.PaymentRepository;
+import com.food_delivery.payment.service.PaymentService;
+import com.food_delivery.payment.service.PaymentService.OrderTotalBreakdown;
+import com.food_delivery.payment.service.PaymentServiceImpl;
 import com.food_delivery.restaurant.enums.CuisineType;
 import com.food_delivery.restaurant.enums.FoodCategory;
 import com.food_delivery.restaurant.enums.UserRole;
@@ -36,6 +48,7 @@ import com.food_delivery.restaurant.service.RestaurantServiceImpl;
 import com.food_delivery.test.AllModulesTestSuite;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Collections;
 import java.util.Scanner;
@@ -53,13 +66,14 @@ public class Main {
     private static CustomerService customerService;
     private static CartService cartService;
     private static OrderService orderService;
+    private static PaymentService paymentService;
 
     public static void main(String[] args) {
         initDependencies();
         seedInitialData();
 
         System.out.println("================================================================================");
-        System.out.println("          WELCOME TO THE ONLINE FOOD DELIVERY PLATFORM (MODULE 1-3)             ");
+        System.out.println("      WELCOME TO THE ONLINE FOOD DELIVERY PLATFORM (MODULE 1-5)                ");
         System.out.println("================================================================================");
 
         if (args.length > 0 && args[0].equalsIgnoreCase("--test")) {
@@ -72,11 +86,12 @@ public class Main {
 
         while (running) {
             System.out.println("\nSelect an option:");
-            System.out.println("1. Run Complete Test Suite (68 Tests across M1, M2, and M3)");
+            System.out.println("1. Run Complete Test Suite (88 Tests across M1 — M5)");
             System.out.println("2. Run End-to-End Order Placement & Lifecycle Simulation Demo");
             System.out.println("3. Launch Interactive Order CLI");
-            System.out.println("4. Exit Application");
-            System.out.print("Enter choice (1-4): ");
+            System.out.println("4. Run Module 5 Payment & Coupon Demo");
+            System.out.println("5. Exit Application");
+            System.out.print("Enter choice (1-5): ");
 
             String input = scanner.nextLine().trim();
             switch (input) {
@@ -94,10 +109,14 @@ public class Main {
                     cli.start();
                 }
                 case "4" -> {
+                    System.out.println();
+                    runPaymentDemo();
+                }
+                case "5" -> {
                     System.out.println("\nThank you for using the Food Delivery Platform. Goodbye!");
                     running = false;
                 }
-                default -> System.out.println("Invalid choice. Please select 1, 2, 3, or 4.");
+                default -> System.out.println("Invalid choice. Please select 1, 2, 3, 4, or 5.");
             }
         }
     }
@@ -119,6 +138,11 @@ public class Main {
 
         // Connect ActiveOrderChecker so restaurant deletion verifies active orders
         restaurantService.setActiveOrderChecker(new ActiveOrderCheckerImpl(orderRepo));
+
+        // Module 5: Payment service
+        PaymentRepository paymentRepo = new InMemoryPaymentRepository();
+        CouponRepository couponRepo = new InMemoryCouponRepository();
+        paymentService = new PaymentServiceImpl(paymentRepo, couponRepo, orderRepo);
     }
 
     private static void seedInitialData() {
@@ -214,6 +238,62 @@ public class Main {
 
         System.out.println("\n--------------------------------------------------------------------------------");
         System.out.println("               END-TO-END SIMULATION COMPLETED SUCCESSFULLY!                    ");
+        System.out.println("--------------------------------------------------------------------------------");
+    }
+
+    private static void runPaymentDemo() {
+        System.out.println("--------------------------------------------------------------------------------");
+        System.out.println("          MODULE 5 — PAYMENT, COUPONS & REFUNDS DEMO                           ");
+        System.out.println("--------------------------------------------------------------------------------");
+
+        String customerId = "CUST-001";
+        String restaurantId = "REST-MUM-01";
+        String addressId = "ADDR-MUM-01";
+
+        // --- DEMO 1: UPI Payment with Coupon ---
+        System.out.println("\n[Demo 1] UPI Payment with a Flat Coupon");
+        System.out.println("Adding a Rs. 50 flat coupon 'FLAT50'...");
+        Coupon coupon = new Coupon("FLAT50", DiscountType.FLAT, BigDecimal.valueOf(50),
+                BigDecimal.valueOf(200), LocalDate.now().plusMonths(6));
+        paymentService.addCoupon(coupon);
+        System.out.println(">> Coupon added: " + coupon.getCode() + " (Rs. 50 off, min order Rs. 200)");
+
+        cartService.addItemToCart(customerId, restaurantId, "ITEM-MUM-01", 1); // Rs. 280
+        Order order1 = orderService.placeOrder(customerId, addressId, LocalTime.of(13, 0));
+        System.out.println(">> Order Placed: " + order1.getId() + " | Items Total: Rs. " + order1.getTotalAmount());
+
+        OrderTotalBreakdown breakdown = paymentService.calculateOrderTotal(
+                order1.getTotalAmount(), "FLAT50", customerId);
+        System.out.println(">> Order Breakdown:");
+        System.out.println("   Items Total  : Rs. " + breakdown.itemsTotal);
+        System.out.println("   Delivery Fee : Rs. " + breakdown.deliveryFee + " (free because items >= Rs. 500? " + breakdown.deliveryFee.equals(BigDecimal.ZERO) + ")");
+        System.out.println("   5% GST       : Rs. " + breakdown.gstAmount);
+        System.out.println("   Coupon Disc. : Rs. " + breakdown.couponDiscount + " (FLAT50)");
+        System.out.println("   Grand Total  : Rs. " + breakdown.grandTotal);
+
+        Payment p1 = paymentService.initiatePayment(
+                new PaymentRequest(order1.getId(), customerId, PaymentMethod.UPI, "FLAT50"));
+        System.out.println(">> Payment Status: " + p1.getStatus() + " | ID: " + p1.getPaymentId());
+
+        // --- DEMO 2: COD Payment ---
+        System.out.println("\n[Demo 2] COD Payment (within Rs. 1500 limit)");
+        cartService.addItemToCart(customerId, restaurantId, "ITEM-MUM-02", 2); // 2 × Rs. 45 = Rs. 90
+        Order order2 = orderService.placeOrder(customerId, addressId, LocalTime.of(13, 0));
+        Payment p2 = paymentService.initiatePayment(
+                new PaymentRequest(order2.getId(), customerId, PaymentMethod.COD));
+        System.out.println(">> COD Payment Status: " + p2.getStatus() + " (PENDING until delivery)");
+
+        // --- DEMO 3: Refund on Customer Cancellation ---
+        System.out.println("\n[Demo 3] Refund issued when customer cancels online order");
+        cartService.addItemToCart(customerId, restaurantId, "ITEM-MUM-03", 1); // Rs. 220
+        Order order3 = orderService.placeOrder(customerId, addressId, LocalTime.of(13, 0));
+        paymentService.initiatePayment(new PaymentRequest(order3.getId(), customerId, PaymentMethod.CARD));
+        orderService.cancelOrder(order3.getId(), customerId, "Demo cancel");
+        Payment refunded = paymentService.processRefund(order3.getId());
+        System.out.println(">> Refund Status: " + refunded.getStatus() + " | Amount: Rs. " + refunded.getAmount());
+
+        System.out.println("\n--------------------------------------------------------------------------------");
+        System.out.println("               MODULE 5 DEMO COMPLETED SUCCESSFULLY!                            ");
         System.out.println("--------------------------------------------------------------------------------");
     }
 }
